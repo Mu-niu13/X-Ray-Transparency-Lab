@@ -78,6 +78,18 @@ def check_setup():
     return missing
 
 
+def check_imports():
+    """Check if required modules can be imported"""
+    try:
+        import torch
+        import torchvision
+        from explanations import get_all_explanations
+        from report_generator import generate_report, generate_summary
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+
 def load_sample_images():
     """Load sample images from test directory"""
     sample_dir = 'data/chest_xray/test'
@@ -124,6 +136,8 @@ def main():
     
     # Check setup
     missing = check_setup()
+    imports_ok, import_error = check_imports()
+    
     if missing:
         st.error("⚠️ **Setup Incomplete**")
         st.markdown("The following required files are missing:")
@@ -131,10 +145,21 @@ def main():
             st.markdown(item)
         st.markdown("""
         **Setup Instructions:**
-        1. Train the model: `python src/train_model.py`
-        2. Generate embeddings: `python src/generate_embeddings.py`
+        1. Download trained model: `python download_with_gdown.py`
+        2. Fix paths: `python fix_embedding_paths.py`
         
-        See README.md for detailed instructions.
+        See SETUP_GUIDE.md for detailed instructions.
+        """)
+        return
+    
+    if not imports_ok:
+        st.error("⚠️ **Import Error**")
+        st.code(import_error)
+        st.markdown("""
+        **Fix:**
+        1. Make sure you're in the virtual environment
+        2. Install requirements: `pip install -r requirements.txt`
+        3. Restart Streamlit: `streamlit run app.py`
         """)
         return
     
@@ -225,6 +250,10 @@ def main():
                 if st.button("🚀 Run AI Analysis", type="primary", use_container_width=True):
                     with st.spinner("Analyzing X-ray... This may take a minute..."):
                         try:
+                            # Debug info
+                            st.write(f"📁 Image path: {image_path}")
+                            st.write(f"📏 File size: {os.path.getsize(image_path)} bytes")
+                            
                             # Get all explanations
                             results = get_all_explanations(
                                 image_path,
@@ -236,10 +265,28 @@ def main():
                             # Store in session state
                             st.session_state['results'] = results
                             st.success("✅ Analysis complete!")
+                            st.rerun()  # Rerun to show results
                             
+                        except FileNotFoundError as e:
+                            st.error(f"❌ File not found: {str(e)}")
+                            st.info("Make sure you've run: `python fix_embedding_paths.py`")
+                        except ImportError as e:
+                            st.error(f"❌ Import error: {str(e)}")
+                            st.info("Make sure all dependencies are installed: `pip install -r requirements.txt`")
+                        except RuntimeError as e:
+                            st.error(f"❌ Runtime error: {str(e)}")
+                            if "CUDA" in str(e):
+                                st.info("Try using CPU instead - change device setting in sidebar")
                         except Exception as e:
                             st.error(f"❌ Error during analysis: {str(e)}")
                             st.exception(e)
+                            st.markdown("""
+                            **Troubleshooting:**
+                            1. Check terminal for detailed error messages
+                            2. Verify all files exist: `ls models/ embeddings/`
+                            3. Check image paths: `python fix_embedding_paths.py`
+                            4. Try restarting: `streamlit run app.py`
+                            """)
         
         with col2:
             st.subheader("Results")

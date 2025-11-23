@@ -8,9 +8,16 @@ env/
 venv/
 ENV/
 
+# Environment variables
+.env
+
 # Data files (too large for git)
 data/chest_xray/
+data/chest_xray_mini/
 *.zip
+
+# Exception: Allow mini dataset if it's small enough (uncomment if needed)
+# !data/chest_xray_mini/
 
 # Model files (too large for git)
 models/*.pth

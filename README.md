@@ -13,6 +13,10 @@ This project provides an interactive web interface for understanding AI-based pn
 
 ## Setup
 
+**📖 For detailed step-by-step instructions, see [SETUP_GUIDE.md](SETUP_GUIDE.md)**
+
+### Quick Start
+
 ### 1. Clone the repository
 
 ```bash
@@ -23,51 +27,53 @@ cd x-ray-transparency-lab
 ### 2. Install dependencies
 
 ```bash
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 3. Download the dataset
-
-Download the Chest X-Ray Pneumonia dataset from Kaggle:
-https://www.kaggle.com/datasets/paultimothymooney/chest-xray-pneumonia
-
-Extract it to the `data/` folder so you have:
-```
-data/chest_xray/
-├── train/
-│   ├── NORMAL/
-│   └── PNEUMONIA/
-├── test/
-│   ├── NORMAL/
-│   └── PNEUMONIA/
-└── val/
-    ├── NORMAL/
-    └── PNEUMONIA/
-```
-
-### 4. Train the model
+### 3. Setup credentials
 
 ```bash
-python src/train_model.py --epochs 10 --batch_size 32
+cp .env.example .env
+# Edit .env with your Kaggle and Google Drive credentials
+export $(cat .env | xargs)  # Load environment variables
 ```
 
-This will save the trained model to `models/pneumonia_classifier.pth`
+**Get credentials:**
+- **Kaggle**: https://www.kaggle.com/settings/account → "Create New Token"
+- **Google Drive File ID**: Contact maintainer or see COLAB_TRAINING_GUIDE.md
 
-### 5. Generate embeddings for similarity search
+### 4. Download dataset (~5.3 GB)
 
 ```bash
-python src/generate_embeddings.py
+python download_data.py
 ```
 
-This creates the embedding index in `embeddings/`
+### 5. Download pre-trained model (~142 MB)
 
-### 6. Run the web application
+```bash
+python download_trained_model.py
+```
+
+Or use command line argument:
+```bash
+python download_trained_model.py --file_id YOUR_GOOGLE_DRIVE_FILE_ID
+```
+
+### 6. Fix embedding paths (REQUIRED)
+
+```bash
+python fix_embedding_paths.py
+```
+
+### 7. Launch the app
 
 ```bash
 streamlit run app.py
 ```
 
-The app will open in your browser at `http://localhost:8501`
+Visit `http://localhost:8501` in your browser.
 
 ## Usage
 
