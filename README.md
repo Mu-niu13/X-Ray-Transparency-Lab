@@ -4,7 +4,7 @@ Multi-view explainable AI system for pneumonia detection in chest X-rays.
 
 [![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://mu-niu13-x-ray-transparency-lab-app-y74grj.streamlit.app/)
 
-** Live Demo:** https://mu-niu13-x-ray-transparency-lab-app-y74grj.streamlit.app/
+**Live Demo:** https://mu-niu13-x-ray-transparency-lab-app-y74grj.streamlit.app/
 
 ## Overview
 
