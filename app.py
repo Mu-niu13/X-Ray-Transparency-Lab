@@ -9,9 +9,6 @@ import numpy as np
 from PIL import Image
 import os
 import sys
-import zipfile
-import requests
-from pathlib import Path
 
 # Add src to path
 sys.path.append('src')
@@ -72,115 +69,106 @@ st.markdown("""
 
 @st.cache_resource
 def download_model_files():
-    """Download model and embeddings if they don't exist"""
+    """Download model and embeddings from Hugging Face Hub"""
     
     # Check if files already exist
-    required_files = [
-        'models/pneumonia_classifier.pth',
-        'embeddings/embeddings.npy',
-        'embeddings/similarity_index.faiss',
-        'embeddings/labels.npy',
-        'embeddings/paths.pkl'
-    ]
+    required_files = {
+        'models/pneumonia_classifier.pth': 'models/pneumonia_classifier.pth',
+        'embeddings/embeddings.npy': 'embeddings/embeddings.npy',
+        'embeddings/similarity_index.faiss': 'embeddings/similarity_index.faiss',
+        'embeddings/labels.npy': 'embeddings/labels.npy',
+        'embeddings/paths.pkl': 'embeddings/paths.pkl'
+    }
     
-    if all(os.path.exists(f) for f in required_files):
+    if all(os.path.exists(f) for f in required_files.keys()):
         return True
     
     try:
-        st.info("📥 Downloading model files for first-time setup...")
-        
-        # Create directories
-        os.makedirs('models', exist_ok=True)
-        os.makedirs('embeddings', exist_ok=True)
-        
-        # Get file ID from secrets
+        # Import huggingface_hub
         try:
-            file_id = st.secrets["GDRIVE_MODEL_ID"]
+            from huggingface_hub import hf_hub_download
+        except ImportError:
+            st.error("❌ Missing dependency: huggingface_hub")
+            st.info("Please add `huggingface_hub>=0.19.0` to requirements.txt")
+            return False
+        
+        # Get repo ID from secrets
+        try:
+            repo_id = st.secrets["HUGGINGFACE_REPO"]
         except Exception:
             st.error("⚠️ **Setup Required**")
             st.markdown("""
             Model files are not configured. Please:
             
-            1. Upload `trained_model.zip` to Google Drive
-            2. Share it with "Anyone with the link"
-            3. Get the file ID from the share link
-            4. Add it to Streamlit Secrets:
-               - Go to **Settings** → **Secrets**
-               - Add: `GDRIVE_MODEL_ID = "your_file_id_here"`
+            1. **Upload your model to Hugging Face:**
+               - Run locally: `python upload_to_huggingface.py`
+               - Get your repo ID (e.g., `username/xray-pneumonia-model`)
             
-            See [SETUP_GUIDE.md](https://github.com/yourusername/x-ray-transparency-lab/blob/main/SETUP_GUIDE.md) for details.
+            2. **Add to Streamlit Cloud Secrets:**
+               - Go to: Dashboard → Your App → Settings → Secrets
+               - Add this line:
+                 ```
+                 HUGGINGFACE_REPO = "username/xray-pneumonia-model"
+                 ```
+               - Click "Save"
+            
+            3. **Restart the app**
+            
+            **Need help?** See [SETUP_GUIDE.md](https://github.com/yourusername/x-ray-transparency-lab/blob/main/SETUP_GUIDE.md)
             """)
             return False
         
-        # Download using requests with proper Google Drive handling
-        output = 'trained_model.zip'
+        st.info(f"📥 Downloading model files from Hugging Face (first time only, ~2-3 min)...")
+        st.caption(f"Repository: {repo_id}")
         
-        def download_file_from_google_drive(file_id, destination):
-            """Download large file from Google Drive with virus scan bypass"""
-            def get_confirm_token(response):
-                for key, value in response.cookies.items():
-                    if key.startswith('download_warning'):
-                        return value
-                return None
-
-            def save_response_content(response, destination):
-                CHUNK_SIZE = 32768
-                with open(destination, "wb") as f:
-                    for chunk in response.iter_content(CHUNK_SIZE):
-                        if chunk:
-                            f.write(chunk)
-
-            URL = "https://docs.google.com/uc?export=download"
-            session = requests.Session()
-
-            response = session.get(URL, params={'id': file_id}, stream=True)
-            token = get_confirm_token(response)
-
-            if token:
-                params = {'id': file_id, 'confirm': token}
-                response = session.get(URL, params=params, stream=True)
-
-            save_response_content(response, destination)
+        # Create directories
+        os.makedirs('models', exist_ok=True)
+        os.makedirs('embeddings', exist_ok=True)
         
-        progress_bar = st.progress(0)
-        status_text = st.empty()
+        # Download each file
+        progress = st.progress(0)
+        status = st.empty()
+        total_files = len(required_files)
         
-        status_text.text('Downloading model files (~140 MB)...')
-        download_file_from_google_drive(file_id, output)
-        progress_bar.progress(50)
+        for i, (local_path, repo_path) in enumerate(required_files.items(), 1):
+            status.text(f"Downloading {os.path.basename(repo_path)} ({i}/{total_files})...")
+            
+            try:
+                downloaded_path = hf_hub_download(
+                    repo_id=repo_id,
+                    filename=repo_path,
+                    repo_type="model",
+                    cache_dir=".cache"
+                )
+                
+                # Copy to correct location
+                import shutil
+                os.makedirs(os.path.dirname(local_path), exist_ok=True)
+                shutil.copy(downloaded_path, local_path)
+                
+                progress.progress(i / total_files)
+                
+            except Exception as e:
+                st.error(f"❌ Failed to download {repo_path}")
+                st.exception(e)
+                st.info("""
+                **Troubleshooting:**
+                - Verify repository exists: https://huggingface.co/{repo_id}
+                - Check repository is public (or add HF token to secrets)
+                - Ensure repo_id format is: `username/repo-name`
+                """)
+                return False
         
-        # Verify it's actually a zip file
-        if not zipfile.is_zipfile(output):
-            os.remove(output)
-            raise Exception("Downloaded file is not a valid zip file. Please check the Google Drive file ID and sharing settings.")
-        
-        # Extract files
-        status_text.text('Extracting files...')
-        with zipfile.ZipFile(output, 'r') as zip_ref:
-            zip_ref.extractall('.')
-        progress_bar.progress(80)
-        
-        # Clean up
-        os.remove(output)
-        progress_bar.progress(100)
-        
-        status_text.text('✅ Setup complete!')
-        st.success('Model files downloaded successfully! The app is ready to use.')
+        status.text("✅ All files downloaded!")
+        progress.empty()
+        st.success("Model files ready! The app is now functional.")
         st.balloons()
         
         return True
         
     except Exception as e:
-        st.error(f"❌ Error downloading model files: {str(e)}")
-        st.info("""
-        **Troubleshooting:**
-        - Verify the Google Drive file ID is correct
-        - Ensure the file is shared with "Anyone with the link"
-        - Check that the file is named `trained_model.zip`
-        - The file should be about 140 MB
-        
-        **Alternative:** You can also host the file on Dropbox, Hugging Face, or another file hosting service.
-        """)
+        st.error(f"❌ Unexpected error: {str(e)}")
+        st.exception(e)
         return False
 
 
@@ -272,10 +260,10 @@ def main():
         for item in missing:
             st.markdown(item)
         st.markdown("""
-        **This shouldn't happen after download. Please try:**
-        1. Refresh the page
-        2. Clear Streamlit cache (Settings → Clear Cache)
-        3. Redeploy the app
+        **This shouldn't happen after download. Please:**
+        1. Check Streamlit Cloud logs for errors
+        2. Verify HUGGINGFACE_REPO in secrets
+        3. Try redeploying the app
         """)
         return
     
@@ -284,8 +272,9 @@ def main():
         st.code(import_error)
         st.markdown("""
         **Please check:**
-        1. All dependencies are in requirements.txt
-        2. Try redeploying the app
+        1. All dependencies in requirements.txt
+        2. Python version (3.10 recommended)
+        3. Streamlit Cloud build logs
         """)
         return
     
@@ -305,7 +294,7 @@ def main():
         device = st.selectbox(
             "Compute Device",
             options=['cpu'],
-            help="CPU is used for Streamlit Cloud deployment"
+            help="CPU is used for cloud deployment"
         )
         
         show_probabilities = st.checkbox("Show probability details", value=True)
@@ -395,8 +384,8 @@ def main():
                             st.markdown("""
                             **Troubleshooting:**
                             1. Try a different image
-                            2. Refresh the page
-                            3. Check that the image is a valid chest X-ray
+                            2. Check that the image is a valid chest X-ray
+                            3. Refresh the page
                             """)
         
         with col2:
