@@ -309,7 +309,7 @@ def main():
         """)
     
     # Main content
-    tab1, tab2, tab3 = st.tabs(["🔬 Demo", "📖 About & Methods"])
+    tab1, tab2, = st.tabs(["🔬 Demo", "📖 About & Methods"])
     
     with tab1:
         col1, col2 = st.columns([1, 1])
