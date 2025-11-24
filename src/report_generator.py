@@ -1,39 +1,56 @@
 """
-Generate natural language reports from explanation outputs.
-Template-based system with dynamic content insertion.
+Generate natural language reports and summaries from explanation outputs.
+This version:
+- Uses prediction, probability, Grad-CAM, and occlusion sensitivity
+- Does NOT use or mention similar cases
 """
 
 import numpy as np
 
 
+def get_confidence_level(prob):
+    """
+    Map probability to a qualitative confidence level and phrase.
+    """
+    if prob >= 0.9:
+        return "very high", "strongly supports"
+    elif prob >= 0.75:
+        return "high", "supports"
+    elif prob >= 0.6:
+        return "moderate", "suggests but does not confirm"
+    else:
+        return "low", "provides only weak evidence for"
+
+
 def analyze_heatmap_location(heatmap, threshold=0.6):
     """
     Determine the primary location of activation in the heatmap.
-    
+
     Returns:
         str: Description of location (e.g., "right lower lung field")
     """
+    if heatmap is None:
+        return "lung fields"
+
     h, w = heatmap.shape
-    
-    # Threshold to find highly activated regions
-    high_activation = heatmap > threshold
-    
-    if not high_activation.any():
-        return "diffuse regions"
-    
-    # Get coordinates of high activation
-    y_coords, x_coords = np.where(high_activation)
-    
-    # Determine left/right (chest X-rays are typically mirrored in display)
+    norm = heatmap / (heatmap.max() + 1e-8)
+
+    mask = norm > threshold
+    if not mask.any():
+        return "lung fields"
+
+    y_coords, x_coords = np.where(mask)
+
+    # Left / right / central
     avg_x = x_coords.mean()
-    if avg_x < w * 0.4:
+    if avg_x < w * 0.33:
         horizontal = "left"
-    elif avg_x > w * 0.6:
+    elif avg_x > w * 0.67:
         horizontal = "right"
     else:
         horizontal = "central"
-    
-    # Determine upper/middle/lower
+
+    # Upper / middle / lower
     avg_y = y_coords.mean()
     if avg_y < h * 0.33:
         vertical = "upper"
@@ -41,59 +58,116 @@ def analyze_heatmap_location(heatmap, threshold=0.6):
         vertical = "lower"
     else:
         vertical = "middle"
-    
+
     if horizontal == "central":
         return f"{vertical} lung field"
     else:
         return f"{horizontal} {vertical} lung field"
 
 
-def analyze_occlusion_consistency(occlusion_heatmap, gradcam_heatmap, threshold=0.5):
+def analyze_gradcam_regions(gradcam_heatmap, high_threshold=0.7, medium_threshold=0.4):
+    """
+    Provide a short text description of Grad-CAM intensity patterns.
+    """
+    if gradcam_heatmap is None:
+        return "The attention map could not be computed for this image."
+
+    norm = gradcam_heatmap / (gradcam_heatmap.max() + 1e-8)
+
+    high = (norm > high_threshold).mean()
+    medium = ((norm > medium_threshold) & (norm <= high_threshold)).mean()
+
+    if high > 0.2:
+        return (
+            "The model shows strong, sharply localized activation in this region, "
+            "suggesting it finds highly discriminative features there."
+        )
+    elif medium > 0.3:
+        return (
+            "The model shows moderately diffuse activation, indicating that the decision "
+            "relies on broader texture patterns rather than a single focal lesion."
+        )
+    else:
+        return (
+            "The Grad-CAM map shows only weak activation, suggesting that the model's "
+            "decision is not driven by a single clearly defined region."
+        )
+
+
+def check_gradcam_occlusion_consistency(gradcam_heatmap, occlusion_heatmap, threshold=0.5):
     """
     Check if occlusion sensitivity confirms Grad-CAM findings.
-    
+
     Returns:
-        str: Description of consistency
+        str: Description of consistency.
     """
-    # Resize heatmaps to same size if needed
-    import cv2
-    
-    if occlusion_heatmap.shape != gradcam_heatmap.shape:
-        # Resize gradcam to match occlusion size
-        target_size = (occlusion_heatmap.shape[1], occlusion_heatmap.shape[0])
-        gradcam_heatmap = cv2.resize(gradcam_heatmap, target_size)
-    
-    # Find regions with high importance
-    gradcam_high = gradcam_heatmap > threshold
-    occlusion_high = occlusion_heatmap > threshold
-    
-    # Calculate overlap
-    overlap = np.logical_and(gradcam_high, occlusion_high).sum()
-    total_gradcam = gradcam_high.sum()
-    
-    if total_gradcam == 0:
-        return "consistent with the highlighted regions"
-    
-    overlap_ratio = overlap / total_gradcam
-    
-    if overlap_ratio > 0.6:
-        return "strongly supports the importance of these regions"
-    elif overlap_ratio > 0.3:
-        return "partially confirms these regions as important"
+    if gradcam_heatmap is None or occlusion_heatmap is None:
+        return (
+            "could not be fully assessed due to missing explanation maps."
+        )
+
+    # Normalize both to [0,1]
+    g = gradcam_heatmap
+    o = occlusion_heatmap
+
+    g = g / (g.max() + 1e-8)
+    o = o / (o.max() + 1e-8)
+
+    # Resize occlusion map to Grad-CAM resolution if needed
+    if o.shape != g.shape:
+        # simple nearest-neighbor down/upsampling via indexing
+        gy, gx = g.shape
+        oy, ox = o.shape
+        y_idx = (np.linspace(0, oy - 1, gy)).astype(int)
+        x_idx = (np.linspace(0, ox - 1, gx)).astype(int)
+        o = o[np.ix_(y_idx, x_idx)]
+
+    gradcam_high = g > threshold
+    occlusion_high = o > threshold
+
+    overlap = (gradcam_high & occlusion_high).sum()
+    union = (gradcam_high | occlusion_high).sum() + 1e-8
+    jaccard = overlap / union
+
+    if jaccard > 0.5:
+        return (
+            "appears consistent: regions highlighted by Grad-CAM largely overlap "
+            "with areas that strongly affect the prediction when occluded"
+        )
+    elif jaccard > 0.2:
+        return (
+            "shows partial consistency: some Grad-CAM regions are supported by the "
+            "occlusion analysis, but the overlap is only moderate"
+        )
     else:
-        return "suggests importance may be distributed across multiple areas"
+        return (
+            "shows limited consistency: the occlusion analysis highlights somewhat "
+            "different regions than Grad-CAM, so the explanation should be interpreted cautiously"
+        )
 
 
-def get_confidence_level(probability):
-    """Categorize confidence level"""
-    if probability >= 0.90:
-        return "very high", "strongly indicates"
-    elif probability >= 0.75:
-        return "high", "indicates"
-    elif probability >= 0.60:
-        return "moderate", "suggests"
-    else:
-        return "low", "weakly suggests"
+def generate_summary(explanation_results):
+    """
+    Generate a brief, 1–2 sentence summary for the UI.
+    """
+    prediction = explanation_results["prediction"]
+    probability = explanation_results["probability"]
+    gradcam_heatmap = explanation_results.get("gradcam_heatmap")
+    occlusion_heatmap = explanation_results.get("occlusion_heatmap")
+
+    confidence_level, confidence_phrase = get_confidence_level(probability)
+    location = analyze_heatmap_location(gradcam_heatmap)
+    consistency = check_gradcam_occlusion_consistency(gradcam_heatmap, occlusion_heatmap)
+
+    prob_percent = probability * 100
+
+    summary = (
+        f"The AI model predicts **{prediction}** with **{confidence_level}** confidence "
+        f"(about **{prob_percent:.1f}%**). The Grad-CAM map focuses mainly on the "
+        f"**{location}**, and the occlusion analysis {consistency}."
+    )
+
+    return summary
 
 
 def generate_report(explanation_results):
@@ -108,70 +182,65 @@ def generate_report(explanation_results):
 
     All similar-cases content has been removed.
     """
-    prediction = explanation_results['prediction']
-    probability = explanation_results['probability']
-    gradcam_heatmap = explanation_results['gradcam_heatmap']
-    occlusion_heatmap = explanation_results['occlusion_heatmap']
+    prediction = explanation_results["prediction"]
+    probability = explanation_results["probability"]
+    gradcam_heatmap = explanation_results.get("gradcam_heatmap")
+    occlusion_heatmap = explanation_results.get("occlusion_heatmap")
 
-    # High-level analysis helpers
     confidence_level, confidence_phrase = get_confidence_level(probability)
     location = analyze_heatmap_location(gradcam_heatmap)
     gradcam_analysis = analyze_gradcam_regions(gradcam_heatmap)
-    consistency = check_gradcam_occlusion_consistency(
-        gradcam_heatmap, occlusion_heatmap
-    )
+    consistency = check_gradcam_occlusion_consistency(gradcam_heatmap, occlusion_heatmap)
 
-    prob_percent = probability * 100
+    prob_percent = probability * 100.0
 
     report_sections = []
 
     # 1. Overall conclusion
     report_sections.append(
         f"### Overall AI Assessment\n\n"
-        f"The AI model predicts **{prediction}** with a **{confidence_level}** level "
-        f"of confidence (estimated probability: **{prob_percent:.1f}%**). "
-        f"This probability {confidence_phrase} the presence of {prediction.lower()} "
-        f"in this chest X-ray image."
+        f"The AI model predicts **{prediction}** with a **{confidence_level}** level of "
+        f"confidence (estimated probability: **{prob_percent:.1f}%**). "
+        f"This probability {confidence_phrase} the presence of "
+        f"{prediction.lower()} in this chest X-ray image."
     )
 
     # 2. Grad-CAM explanation
     report_sections.append(
         f"### Visual Attention (Grad-CAM)\n\n"
-        f"The Grad-CAM heatmap shows that the model's attention is primarily "
-        f"focused on the **{location}**. {gradcam_analysis} "
-        f"These regions contain image patterns that the model finds most informative "
-        f"for distinguishing between normal lungs and pneumonia."
+        f"The Grad-CAM heatmap shows that the model's attention is primarily focused on "
+        f"the **{location}**. {gradcam_analysis} "
+        f"These regions contain image patterns that the model finds most informative for "
+        f"distinguishing between normal lungs and pneumonia."
     )
 
     # 3. Occlusion sensitivity explanation
     report_sections.append(
         f"### Importance Verification (Occlusion Sensitivity)\n\n"
-        f"Occlusion sensitivity analysis {consistency}. When the most highlighted "
-        f"regions in the Grad-CAM map are masked or perturbed, the model's predicted "
-        f"probability for **{prediction}** changes substantially. This supports the "
-        f"interpretation that these regions are truly important to the model's decision."
+        f"Occlusion sensitivity analysis {consistency}. When the most highlighted regions "
+        f"in the Grad-CAM map are masked or perturbed, the model's predicted probability "
+        f"for **{prediction}** changes substantially. This supports the interpretation "
+        f"that these regions are truly important to the model's decision."
     )
 
-    # 4. Clinical-style interpretation (NO mention of similar training cases)
+    # 4. Clinical-style interpretation (no mention of similar cases)
     if prediction == "PNEUMONIA":
         interpretation = (
-            "Taken together, the visual attention map and occlusion analysis suggest "
-            "that the highlighted lung regions contain patterns consistent with "
-            "pneumonia (for example, areas of increased opacity or consolidation). "
-            "However, this output should be interpreted as a decision-support signal "
-            "rather than a definitive diagnosis."
+            "Taken together, the visual attention map and occlusion analysis suggest that "
+            "the highlighted lung regions contain patterns consistent with pneumonia "
+            "(for example, areas of increased opacity or consolidation). However, this "
+            "output should be interpreted as a decision-support signal rather than a "
+            "definitive diagnosis."
         )
     else:  # NORMAL
         interpretation = (
-            "Taken together, the visual attention map and occlusion analysis do not "
-            "show strong, localized patterns typically associated with pneumonia. "
-            "The model's assessment is more consistent with a normal chest X-ray, "
-            "but clinical correlation with symptoms and additional tests remains essential."
+            "Taken together, the visual attention map and occlusion analysis do not show "
+            "strong, localized patterns typically associated with pneumonia. The model's "
+            "assessment is more consistent with a normal chest X-ray, but clinical "
+            "correlation with symptoms and additional tests remains essential."
         )
 
-    report_sections.append(
-        f"### Interpretation\n\n{interpretation}"
-    )
+    report_sections.append(f"### Interpretation\n\n{interpretation}")
 
     # 5. Disclaimer
     report_sections.append(
@@ -182,44 +251,3 @@ def generate_report(explanation_results):
     )
 
     return "\n\n".join(report_sections)
-
-
-def generate_summary(explanation_results):
-    """
-    Generate a brief summary (1-2 sentences) for quick display.
-    
-    Args:
-        explanation_results: dict from get_all_explanations()
-    
-    Returns:
-        str: Brief summary text
-    """
-    prediction = explanation_results['prediction']
-    probability = explanation_results['probability']
-    location = analyze_heatmap_location(explanation_results['gradcam_heatmap'])
-    
-    prob_percent = probability * 100
-    
-    summary = (
-        f"The model predicts **{prediction}** with {prob_percent:.1f}% confidence, "
-        f"focusing on patterns in the {location}."
-    )
-    
-    return summary
-
-
-# Example usage and testing
-if __name__ == '__main__':
-    # Mock data for testing
-    mock_results = {
-        'prediction': 'PNEUMONIA',
-        'probability': 0.87,
-        'gradcam_heatmap': np.random.rand(7, 7) * 0.5 + 0.3,  # simulated heatmap
-        'occlusion_heatmap': np.random.rand(224, 224) * 0.5 + 0.2
-    }
-    
-    print("=== SUMMARY ===")
-    print(generate_summary(mock_results))
-    print("\n" + "="*80 + "\n")
-    print("=== FULL REPORT ===")
-    print(generate_report(mock_results))
