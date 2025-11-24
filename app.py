@@ -112,22 +112,35 @@ def download_model_files():
             """)
             return False
         
-        # Download using requests (Google Drive direct download)
+        # Download using requests with proper Google Drive handling
         output = 'trained_model.zip'
         
         def download_file_from_google_drive(file_id, destination):
-            """Download large file from Google Drive"""
-            URL = "https://drive.google.com/uc?export=download&confirm=1"
-            
+            """Download large file from Google Drive with virus scan bypass"""
+            def get_confirm_token(response):
+                for key, value in response.cookies.items():
+                    if key.startswith('download_warning'):
+                        return value
+                return None
+
+            def save_response_content(response, destination):
+                CHUNK_SIZE = 32768
+                with open(destination, "wb") as f:
+                    for chunk in response.iter_content(CHUNK_SIZE):
+                        if chunk:
+                            f.write(chunk)
+
+            URL = "https://docs.google.com/uc?export=download"
             session = requests.Session()
+
             response = session.get(URL, params={'id': file_id}, stream=True)
-            
-            # Save file
-            CHUNK_SIZE = 32768
-            with open(destination, "wb") as f:
-                for chunk in response.iter_content(CHUNK_SIZE):
-                    if chunk:
-                        f.write(chunk)
+            token = get_confirm_token(response)
+
+            if token:
+                params = {'id': file_id, 'confirm': token}
+                response = session.get(URL, params=params, stream=True)
+
+            save_response_content(response, destination)
         
         progress_bar = st.progress(0)
         status_text = st.empty()
@@ -135,6 +148,11 @@ def download_model_files():
         status_text.text('Downloading model files (~140 MB)...')
         download_file_from_google_drive(file_id, output)
         progress_bar.progress(50)
+        
+        # Verify it's actually a zip file
+        if not zipfile.is_zipfile(output):
+            os.remove(output)
+            raise Exception("Downloaded file is not a valid zip file. Please check the Google Drive file ID and sharing settings.")
         
         # Extract files
         status_text.text('Extracting files...')
@@ -159,6 +177,9 @@ def download_model_files():
         - Verify the Google Drive file ID is correct
         - Ensure the file is shared with "Anyone with the link"
         - Check that the file is named `trained_model.zip`
+        - The file should be about 140 MB
+        
+        **Alternative:** You can also host the file on Dropbox, Hugging Face, or another file hosting service.
         """)
         return False
 
