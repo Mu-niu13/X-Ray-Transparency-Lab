@@ -284,7 +284,7 @@ def main():
         st.markdown("""
         1. **Upload** a chest X-ray image
         2. Click **"Run AI Analysis"**
-        3. **Explore** multiple explanation views
+        3. **Explore** the Diagnosis Explainer
         4. **Read** the generated report
         
         ---
@@ -304,13 +304,12 @@ def main():
         **About This Tool**
         
         This system uses three complementary XAI methods:
-        - 🎯 **Grad-CAM**: Visual attention
-        - 🔍 **Occlusion**: Importance testing
-        - 📊 **Similar Cases**: Example-based reasoning
+        - **Grad-CAM**: Visual attention
+        - **Occlusion**: Importance testing
         """)
     
     # Main content
-    tab1, tab2, tab3 = st.tabs(["🔬 Demo", "📖 About & Methods", "🗂️ Case Gallery"])
+    tab1, tab2, tab3 = st.tabs(["🔬 Demo", "📖 About & Methods"])
     
     with tab1:
         col1, col2 = st.columns([1, 1])
@@ -322,29 +321,9 @@ def main():
             uploaded_file = st.file_uploader(
                 "Upload Chest X-Ray Image",
                 type=['jpg', 'jpeg', 'png'],
-                help="Upload a PA-view chest X-ray in JPEG or PNG format"
+                help="Upload a chest X-ray in JPEG or PNG format"
             )
             
-            # Sample selection
-            use_sample = st.checkbox("Use sample image instead")
-            
-            selected_sample = None
-            if use_sample:
-                samples = load_sample_images()
-                if samples:
-                    sample_options = []
-                    sample_map = {}
-                    
-                    for class_name, paths in samples.items():
-                        for i, path in enumerate(paths):
-                            label = f"{class_name} - Sample {i+1}"
-                            sample_options.append(label)
-                            sample_map[label] = path
-                    
-                    selected_label = st.selectbox("Select sample", sample_options)
-                    selected_sample = sample_map[selected_label]
-                else:
-                    st.warning("No sample images found in test directory")
             
             # Determine which image to use
             image_path = None
@@ -354,8 +333,6 @@ def main():
                 with open(temp_path, "wb") as f:
                     f.write(uploaded_file.getbuffer())
                 image_path = temp_path
-            elif selected_sample:
-                image_path = selected_sample
             
             # Display input image
             if image_path:
@@ -412,13 +389,13 @@ def main():
                 st.info(generate_summary(results))
                 
                 # Detailed report
-                with st.expander("📄 View Detailed Report", expanded=False):
+                with st.expander("View Detailed Report", expanded=False):
                     report = generate_report(results)
                     st.markdown(report)
                 
                 # Explanation views
                 st.markdown("---")
-                st.markdown("### 🔍 Multi-View Explanations")
+                st.markdown("### Diagnosis Explainer")
                 
                 view_tabs = st.tabs([
                     "Original", 
@@ -435,27 +412,27 @@ def main():
                     st.image(results['gradcam_overlay'], 
                             caption="Grad-CAM: Model Attention Heatmap",
                             use_container_width=True)
-                    st.caption("🎯 Red regions indicate areas the model focused on most")
+                    st.caption("Red regions indicate areas the model focused on most")
                 
                 with view_tabs[2]:
                     st.image(results['occlusion_overlay'], 
                             caption="Occlusion Sensitivity: Feature Importance",
                             use_container_width=True)
-                    st.caption("🔍 Red regions have the strongest impact on the prediction")
+                    st.caption("Red regions have the strongest impact on the prediction")
             
             else:
-                st.info("👆 Upload an image then click 'Run AI Analysis'")
+                st.info("Upload an image then click 'Run AI Analysis'")
     
     with tab2:
         st.header("About This System")
         
         st.markdown("""
-        ### 🎯 Purpose
+        ### Purpose
         
         This tool demonstrates **explainable AI (XAI)** techniques for medical image analysis.
         It helps understand *how* and *why* the AI model makes its pneumonia predictions.
         
-        ### 🔬 Methods
+        ### Methods
         
         #### 1. Grad-CAM (Gradient-weighted Class Activation Mapping)
         - Visualizes which regions of the image the neural network pays attention to
@@ -467,21 +444,21 @@ def main():
         - Measures how much the prediction changes when each region is hidden
         - Confirms which areas are truly critical for the decision
         
-        ### ⚠️ Limitations
+        ### Limitations
         
         - This is a **research/educational tool**, not for clinical use
         - The model is trained on limited data and may make errors
         - AI explanations are approximations of model reasoning
         - Always require expert medical interpretation for real diagnosis
         
-        ### 📊 Model Details
+        ### Model Details
         
         - **Architecture:** ResNet-18 with transfer learning
         - **Training Data:** Kaggle Chest X-Ray Pneumonia Dataset
         - **Classes:** NORMAL vs PNEUMONIA (binary classification)
         - **Input:** 224×224 RGB images
         
-        ### 📚 References
+        ### References
         
         - Selvaraju et al. (2017) - Grad-CAM
         - Zeiler & Fergus (2014) - Occlusion Sensitivity

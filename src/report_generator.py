@@ -84,34 +84,6 @@ def analyze_occlusion_consistency(occlusion_heatmap, gradcam_heatmap, threshold=
         return "suggests importance may be distributed across multiple areas"
 
 
-def analyze_similar_cases(similar_cases, prediction_class):
-    """
-    Analyze the similar training cases.
-    
-    Returns:
-        dict with analysis info
-    """
-    # Count labels in similar cases
-    labels = [case['label'] for case in similar_cases]
-    pneumonia_count = sum(1 for label in labels if label == 1)
-    normal_count = len(labels) - pneumonia_count
-    
-    # Check consistency
-    predicted_label = 1 if prediction_class == 'PNEUMONIA' else 0
-    consistent_count = sum(1 for label in labels if label == predicted_label)
-    consistency = consistent_count / len(labels)
-    
-    # Average similarity
-    avg_similarity = np.mean([case['similarity'] for case in similar_cases])
-    
-    return {
-        'pneumonia_count': pneumonia_count,
-        'normal_count': normal_count,
-        'consistency': consistency,
-        'avg_similarity': avg_similarity
-    }
-
-
 def get_confidence_level(probability):
     """Categorize confidence level"""
     if probability >= 0.90:
@@ -127,108 +99,89 @@ def get_confidence_level(probability):
 def generate_report(explanation_results):
     """
     Generate a natural language report from explanation results.
-    
-    Args:
-        explanation_results: dict from get_all_explanations()
-    
-    Returns:
-        str: Formatted report text
+
+    This version uses ONLY:
+    - prediction
+    - probability
+    - Grad-CAM
+    - Occlusion sensitivity
+
+    All similar-cases content has been removed.
     """
     prediction = explanation_results['prediction']
     probability = explanation_results['probability']
     gradcam_heatmap = explanation_results['gradcam_heatmap']
     occlusion_heatmap = explanation_results['occlusion_heatmap']
-    similar_cases = explanation_results['similar_cases']
-    
-    # Analyze components
-    confidence_level, confidence_verb = get_confidence_level(probability)
+
+    # High-level analysis helpers
+    confidence_level, confidence_phrase = get_confidence_level(probability)
     location = analyze_heatmap_location(gradcam_heatmap)
-    consistency = analyze_occlusion_consistency(occlusion_heatmap, gradcam_heatmap)
-    similar_analysis = analyze_similar_cases(similar_cases, prediction)
-    
-    # Build report sections
-    report_sections = []
-    
-    # 1. Prediction statement
+    gradcam_analysis = analyze_gradcam_regions(gradcam_heatmap)
+    consistency = check_gradcam_occlusion_consistency(
+        gradcam_heatmap, occlusion_heatmap
+    )
+
     prob_percent = probability * 100
+
+    report_sections = []
+
+    # 1. Overall conclusion
     report_sections.append(
-        f"**Model Prediction:** {prediction} ({prob_percent:.1f}% probability)\n\n"
-        f"The model {confidence_verb} **{prediction.lower()}** with {confidence_level} confidence."
+        f"### Overall AI Assessment\n\n"
+        f"The AI model predicts **{prediction}** with a **{confidence_level}** level "
+        f"of confidence (estimated probability: **{prob_percent:.1f}%**). "
+        f"This probability {confidence_phrase} the presence of {prediction.lower()} "
+        f"in this chest X-ray image."
     )
-    
-    # 2. Grad-CAM analysis
+
+    # 2. Grad-CAM explanation
     report_sections.append(
-        f"**Visual Attention Analysis (Grad-CAM):**\n"
-        f"The model's attention is primarily focused on the **{location}**. "
-        f"These regions show the strongest activation in the neural network's decision process, "
-        f"indicating they contain visual patterns most characteristic of {prediction.lower()}."
+        f"### Visual Attention (Grad-CAM)\n\n"
+        f"The Grad-CAM heatmap shows that the model's attention is primarily "
+        f"focused on the **{location}**. {gradcam_analysis} "
+        f"These regions contain image patterns that the model finds most informative "
+        f"for distinguishing between normal lungs and pneumonia."
     )
-    
-    # 3. Occlusion sensitivity analysis
+
+    # 3. Occlusion sensitivity explanation
     report_sections.append(
-        f"**Importance Verification (Occlusion Sensitivity):**\n"
-        f"Perturbation analysis {consistency}. "
-        f"When these regions are masked, the model's {prediction.lower()} probability "
-        f"changes significantly, confirming their diagnostic relevance."
+        f"### Importance Verification (Occlusion Sensitivity)\n\n"
+        f"Occlusion sensitivity analysis {consistency}. When the most highlighted "
+        f"regions in the Grad-CAM map are masked or perturbed, the model's predicted "
+        f"probability for **{prediction}** changes substantially. This supports the "
+        f"interpretation that these regions are truly important to the model's decision."
     )
-    
-    # 4. Similar cases analysis
-    similar_pneumonia = similar_analysis['pneumonia_count']
-    similar_normal = similar_analysis['normal_count']
-    consistency_pct = similar_analysis['consistency'] * 100
-    
-    if similar_pneumonia > similar_normal:
-        similar_statement = (
-            f"most similar to **{similar_pneumonia} pneumonia cases** "
-            f"and {similar_normal} normal cases from the training data"
-        )
-    elif similar_normal > similar_pneumonia:
-        similar_statement = (
-            f"most similar to **{similar_normal} normal cases** "
-            f"and {similar_pneumonia} pneumonia cases from the training data"
-        )
-    else:
-        similar_statement = (
-            f"similar to both pneumonia ({similar_pneumonia} cases) "
-            f"and normal ({similar_normal} cases) training examples"
-        )
-    
-    report_sections.append(
-        f"**Example-Based Explanation (Similar Training Cases):**\n"
-        f"This image is {similar_statement}. "
-        f"The {consistency_pct:.0f}% agreement with the model's prediction "
-        f"{'suggests strong pattern consistency' if consistency_pct >= 70 else 'indicates some visual ambiguity'}."
-    )
-    
-    # 5. Clinical interpretation note
-    if confidence_level in ["very high", "high"]:
+
+    # 4. Clinical-style interpretation (NO mention of similar training cases)
+    if prediction == "PNEUMONIA":
         interpretation = (
-            "The convergence of multiple explanation methods supports the model's assessment. "
-            f"The visual patterns in the {location} are consistent with those typically seen in {prediction.lower()} cases."
+            "Taken together, the visual attention map and occlusion analysis suggest "
+            "that the highlighted lung regions contain patterns consistent with "
+            "pneumonia (for example, areas of increased opacity or consolidation). "
+            "However, this output should be interpreted as a decision-support signal "
+            "rather than a definitive diagnosis."
         )
-    else:
+    else:  # NORMAL
         interpretation = (
-            "The model shows some uncertainty in this case. "
-            "Clinical judgment should carefully consider the visual patterns and compare with the similar training examples. "
-            "Additional diagnostic information may be valuable."
+            "Taken together, the visual attention map and occlusion analysis do not "
+            "show strong, localized patterns typically associated with pneumonia. "
+            "The model's assessment is more consistent with a normal chest X-ray, "
+            "but clinical correlation with symptoms and additional tests remains essential."
         )
-    
+
     report_sections.append(
-        f"**Interpretation:**\n{interpretation}"
+        f"### Interpretation\n\n{interpretation}"
     )
-    
-    # 6. Disclaimer
+
+    # 5. Disclaimer
     report_sections.append(
         "---\n\n"
         "*⚠️ This is an AI-generated analysis for educational and research purposes only. "
-        "It should not be used for clinical diagnosis. Always consult qualified healthcare professionals "
-        "for medical interpretation and decision-making.*"
+        "It must not be used for clinical diagnosis or treatment decisions. Always consult "
+        "qualified healthcare professionals for medical interpretation and decision-making.*"
     )
-    
-    # Combine all sections
-    full_report = "\n\n".join(report_sections)
-    
-    return full_report
+
+    return "\n\n".join(report_sections)
 
 
 def generate_summary(explanation_results):
@@ -261,16 +214,8 @@ if __name__ == '__main__':
     mock_results = {
         'prediction': 'PNEUMONIA',
         'probability': 0.87,
-        'gradcam_heatmap': np.random.rand(7, 7) * 0.5 + 0.3,  # Simulated heatmap
-        'occlusion_heatmap': np.random.rand(224, 224) * 0.5 + 0.2,
-        'similar_cases': [
-            {'label': 1, 'similarity': 0.92, 'label_name': 'PNEUMONIA'},
-            {'label': 1, 'similarity': 0.88, 'label_name': 'PNEUMONIA'},
-            {'label': 1, 'similarity': 0.85, 'label_name': 'PNEUMONIA'},
-            {'label': 0, 'similarity': 0.82, 'label_name': 'NORMAL'},
-            {'label': 1, 'similarity': 0.80, 'label_name': 'PNEUMONIA'},
-            {'label': 1, 'similarity': 0.78, 'label_name': 'PNEUMONIA'},
-        ]
+        'gradcam_heatmap': np.random.rand(7, 7) * 0.5 + 0.3,  # simulated heatmap
+        'occlusion_heatmap': np.random.rand(224, 224) * 0.5 + 0.2
     }
     
     print("=== SUMMARY ===")
