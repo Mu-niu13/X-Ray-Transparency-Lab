@@ -9,8 +9,8 @@ import numpy as np
 from PIL import Image
 import os
 import sys
-import gdown
 import zipfile
+import requests
 from pathlib import Path
 
 # Add src to path
@@ -112,15 +112,28 @@ def download_model_files():
             """)
             return False
         
-        # Download zip file
-        url = f'https://drive.google.com/uc?id={file_id}'
+        # Download using requests (Google Drive direct download)
         output = 'trained_model.zip'
+        
+        def download_file_from_google_drive(file_id, destination):
+            """Download large file from Google Drive"""
+            URL = "https://drive.google.com/uc?export=download&confirm=1"
+            
+            session = requests.Session()
+            response = session.get(URL, params={'id': file_id}, stream=True)
+            
+            # Save file
+            CHUNK_SIZE = 32768
+            with open(destination, "wb") as f:
+                for chunk in response.iter_content(CHUNK_SIZE):
+                    if chunk:
+                        f.write(chunk)
         
         progress_bar = st.progress(0)
         status_text = st.empty()
         
         status_text.text('Downloading model files (~140 MB)...')
-        gdown.download(url, output, quiet=False)
+        download_file_from_google_drive(file_id, output)
         progress_bar.progress(50)
         
         # Extract files
