@@ -77,10 +77,106 @@ Visit `http://localhost:8501` in your browser.
 
 ## Usage
 
-1. **Upload an X-ray image** or select from sample cases
-2. Click "**Run AI Analysis**"
-3. View the prediction and explore multiple explanation views
-4. Read the generated report
+### Starting the Application
+
+```bash
+# Navigate to project directory
+cd x-ray-transparency-lab
+
+# Activate virtual environment
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Set environment variable (Mac users with conda)
+export KMP_DUPLICATE_LIB_OK=TRUE
+
+# Run the app
+python -m streamlit run app.py
+
+# Or use the convenience script
+./run_app.sh
+```
+
+The app will open in your browser at `http://localhost:8501`
+
+### Using the Demo
+
+1. **Upload an X-ray image** or check "Use sample image instead"
+   - Supported formats: JPG, JPEG, PNG
+   - Recommended: PA-view chest X-rays
+   - Sample images are available in the dropdown
+
+2. **Click "Run AI Analysis"**
+   - Processing takes 30-60 seconds
+   - The model will analyze the image using multiple methods
+
+3. **View the Results:**
+
+   **Prediction Summary:**
+   - Shows classification (NORMAL or PNEUMONIA)
+   - Displays confidence percentage
+   - Provides quick interpretation
+
+   **Detailed Report:**
+   - Click "View Detailed Report" to expand
+   - Explains the model's reasoning
+   - Describes visual patterns detected
+   - Compares with similar training cases
+
+4. **Explore Multi-View Explanations:**
+
+   **Original Tab:**
+   - Your uploaded X-ray image
+
+   **Grad-CAM Tab:**
+   - Red highlights show where the model focused
+   - Darker red = stronger attention
+   - Helps identify key diagnostic regions
+
+   **Occlusion Tab:**
+   - Shows which areas are most important
+   - Red = high impact on prediction
+   - Validates Grad-CAM findings
+
+   **Similar Cases Tab:**
+   - 6 most similar training images
+   - Shows their labels and similarity scores
+   - Helps understand model reasoning through examples
+
+### Tips for Best Results
+
+- **Use clear, high-quality X-rays**: Blurry or low-resolution images may not work well
+- **PA (posterior-anterior) view recommended**: The model was trained on PA chest X-rays
+- **Try multiple images**: Compare how the model performs on different cases
+- **Read the detailed report**: Provides context beyond just the prediction
+- **Check similar cases**: See what training images the model compared your X-ray to
+
+### Important Notes
+
+⚠️ **This is a demonstration tool for educational purposes only**
+- NOT for clinical diagnosis
+- NOT FDA approved or clinically validated
+- Always consult qualified healthcare professionals
+- The model may make errors - use critically
+
+### Troubleshooting
+
+**Connection Error:**
+```bash
+# Make sure to set the OpenMP environment variable
+export KMP_DUPLICATE_LIB_OK=TRUE
+python -m streamlit run app.py
+```
+
+**Slow Performance:**
+- First analysis is slower (model loading)
+- Subsequent analyses are faster
+- Consider using GPU if available
+
+**"Missing files" error:**
+```bash
+python diagnose_setup.py  # Check what's missing
+python fix_embedding_paths.py  # Fix path issues
+```
 
 ## Project Structure
 

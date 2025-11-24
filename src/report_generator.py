@@ -55,6 +55,14 @@ def analyze_occlusion_consistency(occlusion_heatmap, gradcam_heatmap, threshold=
     Returns:
         str: Description of consistency
     """
+    # Resize heatmaps to same size if needed
+    import cv2
+    
+    if occlusion_heatmap.shape != gradcam_heatmap.shape:
+        # Resize gradcam to match occlusion size
+        target_size = (occlusion_heatmap.shape[1], occlusion_heatmap.shape[0])
+        gradcam_heatmap = cv2.resize(gradcam_heatmap, target_size)
+    
     # Find regions with high importance
     gradcam_high = gradcam_heatmap > threshold
     occlusion_high = occlusion_heatmap > threshold

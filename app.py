@@ -44,14 +44,21 @@ st.markdown("""
         padding: 1.5rem;
         border-radius: 10px;
         margin: 1rem 0;
+        color: #1a1a1a;
     }
     .pneumonia {
         background-color: #ffebee;
         border-left: 5px solid #f44336;
     }
+    .pneumonia h2, .pneumonia h3 {
+        color: #c62828;
+    }
     .normal {
         background-color: #e8f5e9;
         border-left: 5px solid #4caf50;
+    }
+    .normal h2, .normal h3 {
+        color: #2e7d32;
     }
     .stTabs [data-baseweb="tab-list"] {
         gap: 2rem;
@@ -117,7 +124,7 @@ def display_similar_cases(similar_cases):
             try:
                 # Load and display image
                 img = Image.open(case['path'])
-                st.image(img, use_column_width=True)
+                st.image(img, use_container_width=True)
                 
                 # Display metadata
                 st.markdown(f"""
@@ -244,7 +251,7 @@ def main():
             
             # Display input image
             if image_path:
-                st.image(image_path, caption="Input X-Ray", use_column_width=True)
+                st.image(image_path, caption="Input X-Ray", use_container_width=True)
                 
                 # Run analysis button
                 if st.button("🚀 Run AI Analysis", type="primary", use_container_width=True):
@@ -330,18 +337,18 @@ def main():
                 with view_tabs[0]:
                     st.image(results['original_image'], 
                             caption="Original X-Ray",
-                            use_column_width=True)
+                            use_container_width=True)
                 
                 with view_tabs[1]:
                     st.image(results['gradcam_overlay'], 
                             caption="Grad-CAM: Model Attention Heatmap",
-                            use_column_width=True)
+                            use_container_width=True)
                     st.caption("🎯 Red regions indicate areas the model focused on most")
                 
                 with view_tabs[2]:
                     st.image(results['occlusion_overlay'], 
                             caption="Occlusion Sensitivity: Feature Importance",
-                            use_column_width=True)
+                            use_container_width=True)
                     st.caption("🔍 Red regions have the strongest impact on the prediction")
                 
                 with view_tabs[3]:
