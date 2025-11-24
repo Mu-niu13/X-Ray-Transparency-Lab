@@ -282,7 +282,7 @@ def main():
     with st.sidebar:
         st.header("📋 Instructions")
         st.markdown("""
-        1. **Upload** a chest X-ray image or select a sample
+        1. **Upload** a chest X-ray image
         2. Click **"Run AI Analysis"**
         3. **Explore** multiple explanation views
         4. **Read** the generated report
@@ -423,8 +423,7 @@ def main():
                 view_tabs = st.tabs([
                     "Original", 
                     "Grad-CAM", 
-                    "Occlusion", 
-                    "Similar Cases"
+                    "Occlusion"
                 ])
                 
                 with view_tabs[0]:
@@ -443,14 +442,9 @@ def main():
                             caption="Occlusion Sensitivity: Feature Importance",
                             use_container_width=True)
                     st.caption("🔍 Red regions have the strongest impact on the prediction")
-                
-                with view_tabs[3]:
-                    st.markdown("**Most Similar Training Cases:**")
-                    display_similar_cases(results['similar_cases'])
-                    st.caption("📊 Images from training set most similar to the input")
             
             else:
-                st.info("👆 Upload an image or select a sample, then click 'Run AI Analysis'")
+                st.info("👆 Upload an image then click 'Run AI Analysis'")
     
     with tab2:
         st.header("About This System")
@@ -473,11 +467,6 @@ def main():
         - Measures how much the prediction changes when each region is hidden
         - Confirms which areas are truly critical for the decision
         
-        #### 3. Example-Based Explanation
-        - Finds similar cases from the training data
-        - Uses deep feature embeddings and nearest neighbor search
-        - Provides concrete visual comparisons
-        
         ### ⚠️ Limitations
         
         - This is a **research/educational tool**, not for clinical use
@@ -498,10 +487,6 @@ def main():
         - Zeiler & Fergus (2014) - Occlusion Sensitivity
         - Dataset: Kermany et al. (2018)
         """)
-    
-    with tab3:
-        st.header("Case Gallery")
-        st.info("Coming soon: Pre-curated cases showcasing model performance on various scenarios")
 
 
 if __name__ == '__main__':
