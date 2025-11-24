@@ -7,24 +7,19 @@ __pycache__/
 env/
 venv/
 ENV/
+*.egg-info/
 
 # Environment variables
 .env
+.env.local
 
 # Data files (too large for git)
-data/chest_xray/
-data/chest_xray_mini/
+data/
 *.zip
 
-# Exception: Allow mini dataset if it's small enough (uncomment if needed)
-# !data/chest_xray_mini/
-
-# Model files (too large for git)
-models/*.pth
-models/*.pt
-embeddings/*.npy
-embeddings/*.pkl
-embeddings/*.index
+# Model files (hosted on HuggingFace)
+models/
+embeddings/
 
 # IDE
 .vscode/
@@ -43,4 +38,17 @@ Thumbs.db
 .ipynb_checkpoints/
 
 # Streamlit
-.streamlit/
+.streamlit/secrets.toml
+.streamlit/config.toml
+
+# Temporary files
+temp_upload.jpg
+temp_upload.png
+training_history.png
+
+# Cache
+.cache/
+*.pyc
+
+# HuggingFace cache
+.huggingface/
