@@ -9,6 +9,9 @@ import numpy as np
 from PIL import Image
 import os
 import sys
+import gdown
+import zipfile
+from pathlib import Path
 
 # Add src to path
 sys.path.append('src')
@@ -65,6 +68,86 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
+
+
+@st.cache_resource
+def download_model_files():
+    """Download model and embeddings if they don't exist"""
+    
+    # Check if files already exist
+    required_files = [
+        'models/pneumonia_classifier.pth',
+        'embeddings/embeddings.npy',
+        'embeddings/similarity_index.faiss',
+        'embeddings/labels.npy',
+        'embeddings/paths.pkl'
+    ]
+    
+    if all(os.path.exists(f) for f in required_files):
+        return True
+    
+    try:
+        st.info("📥 Downloading model files for first-time setup...")
+        
+        # Create directories
+        os.makedirs('models', exist_ok=True)
+        os.makedirs('embeddings', exist_ok=True)
+        
+        # Get file ID from secrets
+        try:
+            file_id = st.secrets["GDRIVE_MODEL_ID"]
+        except Exception:
+            st.error("⚠️ **Setup Required**")
+            st.markdown("""
+            Model files are not configured. Please:
+            
+            1. Upload `trained_model.zip` to Google Drive
+            2. Share it with "Anyone with the link"
+            3. Get the file ID from the share link
+            4. Add it to Streamlit Secrets:
+               - Go to **Settings** → **Secrets**
+               - Add: `GDRIVE_MODEL_ID = "your_file_id_here"`
+            
+            See [SETUP_GUIDE.md](https://github.com/yourusername/x-ray-transparency-lab/blob/main/SETUP_GUIDE.md) for details.
+            """)
+            return False
+        
+        # Download zip file
+        url = f'https://drive.google.com/uc?id={file_id}'
+        output = 'trained_model.zip'
+        
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        status_text.text('Downloading model files (~140 MB)...')
+        gdown.download(url, output, quiet=False)
+        progress_bar.progress(50)
+        
+        # Extract files
+        status_text.text('Extracting files...')
+        with zipfile.ZipFile(output, 'r') as zip_ref:
+            zip_ref.extractall('.')
+        progress_bar.progress(80)
+        
+        # Clean up
+        os.remove(output)
+        progress_bar.progress(100)
+        
+        status_text.text('✅ Setup complete!')
+        st.success('Model files downloaded successfully! The app is ready to use.')
+        st.balloons()
+        
+        return True
+        
+    except Exception as e:
+        st.error(f"❌ Error downloading model files: {str(e)}")
+        st.info("""
+        **Troubleshooting:**
+        - Verify the Google Drive file ID is correct
+        - Ensure the file is shared with "Anyone with the link"
+        - Check that the file is named `trained_model.zip`
+        """)
+        return False
 
 
 def check_setup():
@@ -136,6 +219,10 @@ def display_similar_cases(similar_cases):
 
 
 def main():
+    # Download model files if needed (first run only)
+    if not download_model_files():
+        st.stop()
+    
     # Header
     st.markdown('<p class="main-header">🫁 X-Ray Transparency Lab</p>', unsafe_allow_html=True)
     st.markdown('<p class="sub-header">Multi-View Explanations for AI Pneumonia Diagnosis</p>', 
@@ -151,11 +238,10 @@ def main():
         for item in missing:
             st.markdown(item)
         st.markdown("""
-        **Setup Instructions:**
-        1. Download trained model: `python download_with_gdown.py`
-        2. Fix paths: `python fix_embedding_paths.py`
-        
-        See SETUP_GUIDE.md for detailed instructions.
+        **This shouldn't happen after download. Please try:**
+        1. Refresh the page
+        2. Clear Streamlit cache (Settings → Clear Cache)
+        3. Redeploy the app
         """)
         return
     
@@ -163,10 +249,9 @@ def main():
         st.error("⚠️ **Import Error**")
         st.code(import_error)
         st.markdown("""
-        **Fix:**
-        1. Make sure you're in the virtual environment
-        2. Install requirements: `pip install -r requirements.txt`
-        3. Restart Streamlit: `streamlit run app.py`
+        **Please check:**
+        1. All dependencies are in requirements.txt
+        2. Try redeploying the app
         """)
         return
     
@@ -185,8 +270,8 @@ def main():
         st.header("⚙️ Settings")
         device = st.selectbox(
             "Compute Device",
-            options=['cpu', 'cuda'] if torch.cuda.is_available() else ['cpu'],
-            help="Use GPU if available for faster processing"
+            options=['cpu'],
+            help="CPU is used for Streamlit Cloud deployment"
         )
         
         show_probabilities = st.checkbox("Show probability details", value=True)
@@ -257,10 +342,6 @@ def main():
                 if st.button("🚀 Run AI Analysis", type="primary", use_container_width=True):
                     with st.spinner("Analyzing X-ray... This may take a minute..."):
                         try:
-                            # Debug info
-                            st.write(f"📁 Image path: {image_path}")
-                            st.write(f"📏 File size: {os.path.getsize(image_path)} bytes")
-                            
                             # Get all explanations
                             results = get_all_explanations(
                                 image_path,
@@ -272,27 +353,16 @@ def main():
                             # Store in session state
                             st.session_state['results'] = results
                             st.success("✅ Analysis complete!")
-                            st.rerun()  # Rerun to show results
+                            st.rerun()
                             
-                        except FileNotFoundError as e:
-                            st.error(f"❌ File not found: {str(e)}")
-                            st.info("Make sure you've run: `python fix_embedding_paths.py`")
-                        except ImportError as e:
-                            st.error(f"❌ Import error: {str(e)}")
-                            st.info("Make sure all dependencies are installed: `pip install -r requirements.txt`")
-                        except RuntimeError as e:
-                            st.error(f"❌ Runtime error: {str(e)}")
-                            if "CUDA" in str(e):
-                                st.info("Try using CPU instead - change device setting in sidebar")
                         except Exception as e:
                             st.error(f"❌ Error during analysis: {str(e)}")
                             st.exception(e)
                             st.markdown("""
                             **Troubleshooting:**
-                            1. Check terminal for detailed error messages
-                            2. Verify all files exist: `ls models/ embeddings/`
-                            3. Check image paths: `python fix_embedding_paths.py`
-                            4. Try restarting: `streamlit run app.py`
+                            1. Try a different image
+                            2. Refresh the page
+                            3. Check that the image is a valid chest X-ray
                             """)
         
         with col2:
@@ -409,8 +479,6 @@ def main():
     with tab3:
         st.header("Case Gallery")
         st.info("Coming soon: Pre-curated cases showcasing model performance on various scenarios")
-        
-        # Could add pre-analyzed interesting cases here
 
 
 if __name__ == '__main__':
